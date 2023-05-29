@@ -43,13 +43,13 @@ const form = reactive({
     },
 })
 
-const buyRefundYear = form.buy.refund * 12;
-
 const inflationRate = computed(() => {
     return 1 + form.general.inflation / 100;
 })
 
-let buyMaxPrice = form.buy.price;
+const monthlyInflationRate = computed(() => {
+    return 1 + (form.general.inflation / 100 / 12);
+})
 
 const rents = () => {
     const rents = [];
@@ -75,74 +75,100 @@ const rents = () => {
 
 const mortages = () => {
     const mortages = [];
-    mortages[0] = {
-        year: 1,
-        charges: form.buy.charges * 12,
-        repayment: form.buy.refund * 12,
-        taxe: Number(form.buy.taxes),
-        interests: form.buy.price * form.buy.rate / 100,
-        remains: form.buy.price,
-        notary: Number(form.buy.notary),
-    };
+
+    mortages[0] = {};
+
+    mortages[0].year = 1;
+    mortages[0].month = 1;
+    mortages[0].remains = Number(form.buy.price);
+    mortages[0].charges = form.buy.charges;
+    mortages[0].repayment = form.buy.refund;
+    mortages[0].taxe = Number(form.buy.taxes) / 12;
+    mortages[0].interests = form.buy.price * form.buy.rate / 100 / 12;
+    mortages[0].notary = Number(form.buy.notary);
+
     mortages[0].refund = mortages[0].repayment - mortages[0].interests;
-    mortages[0].remains = form.buy.price - mortages[0].refund;
     mortages[0].paid = mortages[0].notary + mortages[0].charges + mortages[0].taxe + mortages[0].repayment;
     mortages[0].loss = mortages[0].notary + mortages[0].interests + mortages[0].charges + mortages[0].taxe;
     mortages[0].totalLoss = mortages[0].loss;
     mortages[0].capital = mortages[0].refund;
 
-    let i = 0;
-    while (mortages[i].remains > 0 && i < 24) {
-        i++;
-        const year = i + 1;
-        mortages[i] = {
-            year: year,
-            remains: Math.max(mortages[i - 1].remains - mortages[i - 1].refund, 0),
-            charges: mortages[i - 1].charges * inflationRate.value,
-            totalCharges: mortages[i - 1].charges + Number(form.buy.charges) * 12 * inflationRate.value,
-            taxe: mortages[i - 1].taxe * inflationRate.value,
-            totalTaxe: mortages[i - 1].taxe + Number(form.buy.taxes) * inflationRate.value,
-            repayment: mortages[i - 1].repayment + Number(form.buy.refund) * 12,
-        }
-        mortages[i].interests = Math.max(mortages[i].remains * form.buy.rate / 100, 0);
-        mortages[i].refund = Math.min(mortages[0].repayment - mortages[i].interests, mortages[i - 1].remains);
-        mortages[i].paid = mortages[i].charges + mortages[i].taxe + mortages[i].repayment;
-        mortages[i].loss = mortages[i].interests + mortages[i].charges + mortages[i].taxe;
-        mortages[i].total = mortages[i].charges + mortages[i].repayment + mortages[i].taxe + mortages[i].notary;
-        mortages[i].totalLoss = mortages[i - 1].totalLoss + mortages[i].loss;
-        mortages[i].capital = mortages[i - 1].capital + mortages[i].refund;
+    // console.log(mortages);
 
+    for (let month = 1; month < 12 * 25; month++) {
+        mortages[month] = [];
 
-        if (mortages[i].remains == 0) {
-            form.buy.duration = year;
-        }
+        mortages[month].year = Math.trunc(month / 12) + 1;
+        mortages[month].month = (month % 12) + 1;
+        mortages[month].remains = Math.max(mortages[month - 1].remains - mortages[month - 1].refund, 0);
+        mortages[month].charges = mortages[month - 1].charges * monthlyInflationRate.value;
+        mortages[month].totalCharges = mortages[month - 1].charges + Number(form.buy.charges) * monthlyInflationRate.value;
+        mortages[month].taxe = mortages[month - 1].taxe * monthlyInflationRate.value;
+        mortages[month].totalTaxe = mortages[month - 1].taxe + Number(form.buy.taxes) * monthlyInflationRate.value;
+        mortages[month].repayment = Number(form.buy.refund);
 
-        if (year == 25) {
-            buyMaxPrice = form.buy.price;
-        } else {
-            buyMaxPrice = Infinity;
+        mortages[month].interests = Math.max(mortages[month].remains * form.buy.rate / 100 / 12, 0);
+        mortages[month].refund = Math.min(mortages[month - 1].repayment - mortages[month].interests, mortages[month - 1].remains);
+        mortages[month].paid = mortages[month].charges + mortages[month].taxe + mortages[month].repayment;
+        mortages[month].loss = mortages[month].interests + mortages[month].charges + mortages[month].taxe;
+        mortages[month].total = mortages[month].charges + mortages[month].repayment + mortages[month].taxe + mortages[month].notary;
+        mortages[month].totalLoss = mortages[month - 1].totalLoss + mortages[month].loss;
+        mortages[month].capital = mortages[month - 1].capital + mortages[month].refund;
+
+        if (mortages[month].remains === 0) {
+            form.buy.duration = month + 1;
+            break;
         }
 
+        if (month === 12 * 25 - 1) {
+            form.buy.duration = 12 * 25 - 1;
+        }
     }
 
-    return mortages;
+    // console.log(mortages);
+
+    // Reduce the mortages into years
+    const mortagesYear = [];
+    for (let i = 0; i < Math.trunc(form.buy.duration / 12) + 1; i++) {
+        mortagesYear[i] = {};
+
+        mortagesYear[i].year = i + 1;
+        mortagesYear[i].remains = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => Math.min(acc, current.remains), Infinity);
+        mortagesYear[i].charges = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => acc + current.charges, 0);
+        mortagesYear[i].totalCharges = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => acc + current.totalCharges, 0);
+        mortagesYear[i].taxe = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => acc + current.taxe, 0);
+        mortagesYear[i].totalTaxe = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => acc + current.totalTaxe, 0);
+        mortagesYear[i].repayment = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => acc + current.repayment, 0);
+
+        mortagesYear[i].interests = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => acc + current.interests, 0);
+        mortagesYear[i].refund = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => acc + current.refund, 0);
+        mortagesYear[i].paid = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => acc + current.paid, 0);
+        mortagesYear[i].loss = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => acc + current.loss, 0);
+        mortagesYear[i].total = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => acc + current.total, 0);
+        mortagesYear[i].totalLoss = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => Math.max(acc, current.totalLoss), 0);
+        mortagesYear[i].capital = mortages.filter((elem) => elem.year == i + 1).reduce((acc, current) => Math.max(acc, current.capital), 0);
+    }
+
+
+    return mortagesYear;
 }
 
 const chartData = computed(() => {
     return {
-        labels: Array.from(Array(form.buy.duration).keys()).map(i => i + 1),
+        labels: Array.from(Array(Math.trunc(form.buy.duration / 12) + 1).keys()).map(i => i + 1),
         datasets: [{
             label: 'Location',
-            data: rents()?.map(rent => rent.total),
+            data: rents()?.map(rent => Number(rent.total)),
             backgroundColor: '#f87979',
             borderColor: '#f87979'
         },
         {
             label: 'Achat',
-            data: mortages()?.map(rent => rent.totalLoss),
+            data: mortages()?.map(mortage => mortage.totalLoss),
             backgroundColor: '#9BD0F5',
             borderColor: '#9BD0F5'
-        }]
+        }
+        ]
     };
 })
 
@@ -176,10 +202,14 @@ function submit() {
             <div class="max-w-7xl mx-auto px-6">
                 <div class="bg-white overflow-hidden rounded-lg p-6">
 
-                    <div class="px-4 py-3 rounded bg-green-200">
-                        Simulation pour un emprunt de {{ formatter.format(form.buy.price) }} sur {{ form.buy.duration }} ans
+                    <div :class="'px-4 py-3 rounded ' + (form.buy.duration >= 12 * 25 - 1 ? 'bg-red-200' : 'bg-green-200')">
+                        Simulation pour un emprunt de {{ formatter.format(form.buy.price) }} sur
+                        {{ Math.trunc(form.buy.duration / 12) + 1 }} ans
                         avec un apport de {{ formatter.format(form.buy.contribution) }}
                         (capacité d'achat {{ formatter.format(Number(form.buy.price) + Number(form.buy.contribution)) }})
+                        <span v-if="form.buy.duration >= 12 * 25 - 1" class="font-bold text-red-500">
+                            - Prix d'achat maximum atteint
+                        </span>
                     </div>
 
                     <form @submit.prevent="submit">
@@ -189,7 +219,7 @@ function submit() {
 
                             <TextInput id="name" type="text" class="w-full md:w-min" v-model="form.name"
                                 placeholder="Nom de la simulation" />
-                        
+
                             <div class="flex items-center justify-center">
                                 <div v-if="auth.user" class="flex flex-wrap gap-4 items-center justify-center">
                                     <Link v-if="props.simulation" :href="route('simulations.destroy', props.simulation.id)"
@@ -254,10 +284,9 @@ function submit() {
                                 <H2 class="text-center">Achat</H2>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <InputLabel for="buyPrice"
-                                            :value="'Prix d\'achat' + (form.buy.price == buyMaxPrice ? ' (montant maximum)' : '')" />
+                                        <InputLabel for="buyPrice" value="Prix d'achat" />
                                         <TextInput id="buyPrice" type="number" class="mt-1 block w-full"
-                                            v-model="form.buy.price" placeholder="200 000 €" min="0" :max="buyMaxPrice"
+                                            v-model="form.buy.price" placeholder="200 000 €" min="0"
                                             step="1000" />
                                     </div>
                                     <div>
@@ -335,10 +364,10 @@ function submit() {
                                         <tr>
                                             <Th>Année</Th>
                                             <Th>Mensualités</Th>
-                                            <Th>Interets</Th>
+                                            <Th>Intérêts</Th>
                                             <Th>Remboursement</Th>
                                             <Th>Reste à payer</Th>
-                                            <Th>Chages</Th>
+                                            <Th>Charges</Th>
                                             <Th>Taxe</Th>
                                             <Th>Paiement</Th>
                                             <Th>Perte</Th>
@@ -350,7 +379,7 @@ function submit() {
                                     <tbody>
                                         <tr v-for="(mortage) in mortages()">
                                             <Td>{{ mortage.year }}</Td>
-                                            <Td>{{ formatter.format(buyRefundYear) }}</Td>
+                                            <Td>{{ formatter.format(form.buy.refund) }}</Td>
                                             <Td>{{ formatter.format(mortage.interests) }}</Td>
                                             <Td>{{ formatter.format(mortage.refund) }}</Td>
                                             <Td>{{ formatter.format(mortage.remains) }}</Td>

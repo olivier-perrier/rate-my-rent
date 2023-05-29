@@ -39,8 +39,8 @@ class HandleInertiaRequests extends Middleware
             ],
             'can' => [
                 'createUser' => User::count() < 50,
-                'createSimulation' => $request->user()->simulations()->count() < 100,
-                'deleteAccount' => $request->user()->email != 'demo@rate-my-rent.fr'
+                'createSimulation' => $request->user ? $request->user()->simulations()->count() < 100 : false,
+                'deleteAccount' => $request->user ? $request->user()->email != 'demo@rate-my-rent.fr' : false
             ],
             'ziggy' => function () use ($request) {
                 return array_merge((new Ziggy)->toArray(), [
